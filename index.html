@@ -2,25 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Aruba Instant Tracking Dashboard</title>
+    <title>Aruba Instant Tracking Dashboard - Udon Thani</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        /* Sidebar */
         .sidebar { width: 420px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; overflow-y: auto; }
         h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
         
-        /* Tabs */
         .tabs { display: flex; background: #e9ecef; border-radius: 6px; padding: 4px; margin-bottom: 15px; gap: 5px; }
         .tab-btn { flex: 1; padding: 8px; border: none; cursor: pointer; font-weight: bold; color: #6c757d; background: transparent; border-radius: 4px; transition: 0.2s; font-size: 13px; }
         .tab-btn.active { background: white; color: #0d6efd; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-        /* Content Sections */
         .content-section { flex: 1; overflow-y: auto; display: none; margin-top: 10px; }
         .content-section.active { display: block; }
 
-        /* Table Styles (Devices) */
         table.devices { width: 100%; border-collapse: collapse; font-size: 13px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .devices th, .devices td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
         .devices th { background-color: #f8f9fa; color: #495057; font-weight: bold; }
@@ -29,7 +25,6 @@
         .bg-ap { background-color: #0d6efd; } 
         .bg-bcn { background-color: #198754; }
 
-        /* Styles for System Report Table */
         table.report-table { width: 100%; border-collapse: collapse; font-size: 12px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .report-table th { background-color: #343a40; color: white; padding: 6px; text-align: left; }
         .report-table td { padding: 6px; border-bottom: 1px solid #eee; vertical-align: top; }
@@ -90,7 +85,7 @@
             <button onclick="submitDevice()" class="tab-btn active" style="background:#0d6efd; color:white; margin-top:10px; width:100%;">Connect to Controller</button>
         </div>
 
-        <!-- Section 3: System Report (ใหม่) -->
+        <!-- Section 3: System Report -->
         <div id="view-report" class="content-section">
             <h4 style="margin-bottom:10px; color:#555;">Sync Activity Log</h4>
             <table class="report-table">
@@ -119,8 +114,9 @@
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 
     <script>
-        // --- Map Setup ---
-        var map = L.map('map').setView([13.7563, 100.5018], 17);
+        // --- Map Setup (เปลี่ยนไปโรงพยาบาลอุดรธานี) ---
+        // พิกัด: 17.4098, 102.8026
+        var map = L.map('map').setView([17.4098, 102.8026], 16); 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
         var markers = {}; 
 
@@ -149,7 +145,6 @@
         // --- Realtime Logic ---
         const socket = io('http://localhost:3000');
 
-        // 1. รับข้อมูลอุปกรณ์ (เดิม)
         socket.on('aruba-sync', function(data) {
             document.getElementById('sys-status').innerText = "Live Sync";
             document.getElementById('sys-status').style.color = "#198754";
@@ -164,8 +159,7 @@
 
             let html = '';
             data.logs.forEach(log => {
-                // กำหนดสีตามสถานะ
-                let statusClass = 'status-info'; // Default (Pending/Info)
+                let statusClass = 'status-info'; 
                 let statusIcon = '⏳';
                 
                 if (log.status === 'Success') { statusClass = 'status-success'; statusIcon = '✅'; }
