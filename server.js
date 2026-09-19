@@ -11,8 +11,9 @@ const DB_FILE = 'tracker_db.json';
 
 function initData() {
     if (!fs.existsSync(DB_FILE)) {
+        // อัปเดตพิกัดจำลองให้เป็นแถว อุดรธานี (โรงพยาบาลอุดรธานี และรอบๆ)
         const initialData = { devices: [
-            { id: 'AP-01', name: 'Virtual-Controller', type: 'ap', ip: '192.168.100.5' },
+            { id: 'AP-01', name: 'Udon-Controller-AP', type: 'ap', ip: '192.168.1.100' },
             { id: 'BCN-TEST', name: 'Visitor-Badge-A', type: 'beacon', battery: 95 }
         ]};
         fs.writeFileSync(DB_FILE, JSON.stringify(initialData));
@@ -20,22 +21,20 @@ function initData() {
 }
 initData();
 
-// --- ส่วนของ Report Log (ส่วนใหม่) ---
-let syncHistory = []; // เก็บประวัติการเชื่อมต่อสูงสุด 50 รายการล่าสุด
+// --- ส่วนของ Report Log ---
+let syncHistory = []; 
 const MAX_LOGS = 50;
 
 function addReportLog(sourceType, status, deviceCount = 0, detail = "") {
     const entry = {
         time: new Date().toLocaleTimeString(),
-        source: sourceType, // 'API' หรือ 'Simulation'
-        status: status,     // 'Success', 'Error', 'Pending'
+        source: sourceType,
+        status: status,     
         count: deviceCount,
         detail: detail
     };
-    syncHistory.unshift(entry); // เพิ่มข้อมูลใหม่ไปข้างหน้าสุด
-    if (syncHistory.length > MAX_LOGS) syncHistory.pop(); // เก็บแค่ 50 รายการล่าสุด
-    
-    // ส่งรายงานไปยังหน้าเว็บทันทีที่มีการ Update
+    syncHistory.unshift(entry); 
+    if (syncHistory.length > MAX_LOGS) syncHistory.pop(); 
     io.emit('system-reports', { logs: syncHistory });
 }
 
@@ -46,7 +45,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
-console.log("Starting Aruba Instant Tracking Server with Reporting...");
+console.log("Starting Aruba Instant Tracking Server...");
 
 // --- ฟังก์ชันดึงข้อมูลจริงจาก Aruba Virtual Controller ---
 async function syncWithAruba() {
@@ -57,7 +56,7 @@ async function syncWithAruba() {
     try {
         console.log(">>> Syncing with Aruba API...");
         
-        // 1. Login (Instant OS API)
+        // 1. Login (Instant OS API v2)
         const loginRes = await axios.post(`${baseUrl}/api/v2/auth/login`, {
             username: process.env.ARUBA_USER,
             password: process.env.ARUBA_PASS
@@ -78,11 +77,9 @@ async function syncWithAruba() {
             deviceCount += aps.length;
             foundAPs = aps.length;
 
-            // อัปเดตข้อมูล AP ลงใน DB ของเรา (Merge กับข้อมูลเก่า)
             const currentDB = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
             const dbApsIds = new Set(currentDB.devices.filter(d => d.type === 'ap').map(d => d.id));
             
-            // เพิ่ม/อัปเดต AP ใหม่
             for (const d of aps) {
                 if (!dbApsIds.has(d.mac_addr || d.mac)) {
                     currentDB.devices.push({
@@ -103,10 +100,8 @@ async function syncWithAruba() {
             deviceCount += beacons.length;
             foundBeacons = beacons.length;
 
-            // อัปเดตข้อมูล Beacon ลงใน DB
             const currentDB = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
             for (const b of beacons) {
-                // เพิ่มหากยังไม่มีใน DB ของเรา
                 if (!currentDB.devices.find(dev => dev.id === b.mac_addr)) {
                     currentDB.devices.push({
                         id: b.mac_addr,
@@ -119,38 +114,40 @@ async function syncWithAruba() {
             fs.writeFileSync(DB_FILE, JSON.stringify(currentDB));
         } catch (e) { console.log(">>> Beacon Fetch Skipped:", e.message); }
 
-        // บันทึก Report สำเร็จ
         addReportLog('Aruba API', 'Success', deviceCount, `Found: ${foundAPs} APs, ${foundBeacons} Beacons`);
-        
-        return []; // Return empty to trigger Simulation mode merge logic in main loop if needed, or just return success
+        return []; 
 
     } catch (error) {
         console.error(">>> Aruba API Failed:", error.response?.data || error.message);
-        // บันทึก Report ล้มเหลว
         addReportLog('Aruba API', 'Error', 0, "Authentication Failed or Connection Refused");
         return null;
     }
 }
 
-// --- ฟังก์ชันจำลองข้อมูล (Mock Data) ---
+// --- ฟังก์ชันจำลองข้อมูล (Mock Data - ปรับเป็น อุดรธานี) ---
 function runSimulation() {
     let data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
     
-    // อัปเดตสถานะให้ Beacons เคลื่อนที่
+    // พิกัดประมาณ โรงพยาบาลอุดรธานี (17.409, 102.802)
+    const baseLat = 17.4099; 
+    const baseLng = 102.8026;
+
     data.devices.forEach(d => {
         if (d.type === 'beacon') {
-            if (!d.lat) { d.lat = 13.7560 + Math.random(); d.lng = 100.5010 + Math.random(); } 
+            // ถ้ายังไม่มีพิกัด ให้เริ่มสุ่มเดินเล่นรอบโรงพยาบาล
+            if (!d.lat) { d.lat = baseLat + Math.random() * 0.001; d.lng = baseLng + Math.random() * 0.001; } 
             d.lat += (Math.random() - 0.5) * 0.0002;
             d.lng += (Math.random() - 0.5) * 0.0002;
+            
             if(Math.random() > 0.9 && d.battery > 10) d.battery -= 1;
         } else {
-            if (!d.lat) { d.lat = 13.7563; d.lng = 100.5018; } 
+            // AP ยืนนิ่งๆ แถวโรงพยาบาล
+            if (!d.lat) { d.lat = baseLat + 0.0005; d.lng = baseLng + 0.0002; } 
         }
     });
 
     fs.writeFileSync(DB_FILE, JSON.stringify(data));
     
-    // บันทึก Report เป็น Simulation Mode
     addReportLog('Simulation Mode', 'Info', data.devices.length, "Using local mock data (Aruna offline?)");
     
     return data.devices;
@@ -158,31 +155,25 @@ function runSimulation() {
 
 // --- Loop ทำงานหลัก (10 วินาที) ---
 setInterval(async () => {
-    addReportLog('Polling', 'Pending', 0, "Checking connection..."); // แจ้งเริ่มเช็ค
+    addReportLog('Polling', 'Pending', 0, "Checking connection..."); 
     
     const realData = await syncWithAruba();
-    
     let finalDevices = [];
 
     if (realData && realData.length > 0) {
         finalDevices = realData.map(d => {
-            if (d.type === 'beacon' && d.lat === 0 && d.lng === 0) {
-                d.lat = 13.7560 + Math.random() * 0.001; 
-                d.lng = 100.5010 + Math.random() * 0.001;
+            // ถ้าไม่ได้ Calibrate AP ไว้ ให้ใช้จุดยืนของโรงพยาบาลชั่วคราว
+            if (d.type === 'ap' && d.lat === 0 && d.lng === 0) {
+                d.lat = 17.4099 + Math.random() * 0.001; 
+                d.lng = 102.8026 + Math.random() * 0.001;
             }
             return d;
         });
     } else {
-        // ถ้า API ล้มเหลว ให้ใช้ Simulation Mode
         finalDevices = runSimulation();
     }
 
-    // ส่งข้อมูลอุปกรณ์ไปหน้าเว็บ
-    io.emit('aruba-sync', { 
-        timestamp: new Date(), 
-        devices: finalDevices 
-    });
-
+    io.emit('aruba-sync', { timestamp: new Date(), devices: finalDevices });
 }, 10000);
 
 server.listen(process.env.PORT || 3000, () => {
