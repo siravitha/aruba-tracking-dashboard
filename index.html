@@ -39,4 +39,250 @@
         
         .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
         .st-on { background-color: #198754; box-shadow: 0 0 4px #198754; }
-        .st-off
+        .st-off { background-color: #dc3545; opacity: 0.5; }
+
+        /* Form Styling */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; color: #495057; font-size: 13px; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
+        input:focus, select:focus { border-color: #86b7fe; outline: 0; }
+        
+        .btn-action { width: 100%; padding: 12px; background: #0d6efd; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        .btn-action:hover { background: #0b5ed7; }
+
+        /* --- Map Area (Right Panel) --- */
+        .map-container { flex: 1; position: relative; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        
+        /* Info Overlay on Map */
+        .map-info { position: absolute; top: 10px; right: 10px; z-index: 500; background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+
+        /* Responsive for Mobile */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: 40vh; border-right: none; border-bottom: 1px solid #ddd; }
+            .map-container { height: 60vh; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar Section -->
+    <div class="sidebar">
+        <h2>📡 Aruba Tracking</h2>
+        
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('list')">Device List</button>
+            <button class="tab-btn" onclick="switchTab('add')">Add Device</button>
+        </div>
+
+        <!-- Section 1: Table (List) -->
+        <div id="view-list" class="content-section active">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name / ID</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="device-table-body">
+                    <!-- Data will be injected here -->
+                    <tr><td colspan="3" style="text-align:center; color:#999;">Connecting to Aruba...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Section 2: Add Device Form -->
+        <div id="view-add" class="content-section">
+            <h3 style="margin-top:0; font-size:18px;">Register New Device</h3>
+            
+            <div class="form-group">
+                <label for="device-type">Device Type</label>
+                <select id="device-type" onchange="toggleCoords()">
+                    <option value="ap">Access Point (AP)</option>
+                    <option value="beacon">Aruba Beacon</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="device-name">Friendly Name</label>
+                <input type="text" id="device-name" placeholder="e.g. Entrance-AP-01">
+            </div>
+
+            <!-- Coordinate inputs (Always shown for mapping, but usually static for AP) -->
+            <div class="form-group">
+                <label>Latitude (Start)</label>
+                <input type="number" step="0.000001" id="device-lat" value="13.756300">
+            </div>
+             <div class="form-group">
+                <label>Longitude (Start)</label>
+                <input type="number" step="0.000001" id="device-lng" value="100.501800">
+            </div>
+
+            <button class="btn-action" onclick="submitDevice()">Connect to Controller</button>
+        </div>
+    </div>
+
+    <!-- Map Section -->
+    <div class="map-container">
+        <div class="map-info">
+            Live Sync from Aruba Controller<br>Updated: <span id="last-updated">--:--</span>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+
+    <script>
+        // --- 1. Initialization & UI Logic ---
+        
+        // Map Setup (Leaflet)
+        var map = L.map('map').setView([13.7563, 100.5018], 17);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Store markers to update them later without recreating
+        var markers = {}; 
+
+        // Tab Switching Logic
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+
+            if (tabName === 'list') {
+                document.querySelector('.tabs button:nth-child(1)').classList.add('active');
+                document.getElementById('view-list').classList.add('active');
+            } else {
+                document.querySelector('.tabs button:nth-child(2)').classList.add('active');
+                document.getElementById('view-add').classList.add('active');
+            }
+        }
+
+        // Toggle coordinates display if needed (optional enhancement)
+        function toggleCoords() {
+            const type = document.getElementById('device-type').value;
+            // In this logic, we always allow coordinate input for simplicity
+        }
+
+        // --- 2. Socket.io Connection & Sync Logic ---
+        const socket = io('http://localhost:3000');
+
+        // Listen for Aruba Controller Updates
+        socket.on('aruba-sync', function(data) {
+            console.log("Received Data:", data);
+            
+            // Update Timestamp UI
+            document.getElementById('last-updated').innerText = new Date().toLocaleTimeString();
+
+            // Update Table
+            renderTable(data.devices);
+            
+            // Update Map (Create new markers or move existing ones)
+            updateMapMarkers(data.devices);
+        });
+
+        // --- 3. Rendering Functions ---
+
+        // Draw/update the sidebar table
+        function renderTable(devices) {
+            const tbody = document.getElementById('device-table-body');
+            tbody.innerHTML = ''; // Clear old rows
+
+            devices.forEach(d => {
+                // Determine Badge Color
+                let badgeClass = d.type === 'ap' ? 'bg-ap' : 'bg-bcn';
+                let badgeText = d.type.toUpperCase();
+
+                // Determine Status Style
+                let statusHtml = '<span style="color:#999;">Offline</span>';
+                if(d.status === 'online') {
+                    statusHtml = `<span class="status-dot st-on"></span> <span style="color:#198754">Online</span>`;
+                } else if (d.status === 'up' || d.status === 'connected') {
+                    statusHtml = `<span class="status-dot st-on"></span> <span style="color:blue">Connected</span>`;
+                }
+
+                // Get ID for deletion reference (Use MAC or ID provided by Aruba)
+                let rowId = d.id || 'Unknown';
+
+                const html = `
+                    <tr>
+                        <td><span class="type-badge ${badgeClass}">${badgeText}</span></td>
+                        <td>
+                            <div style="font-weight:bold; font-size:13px;">${d.name || d.mac}</div>
+                            <div style="font-size:10px; color:#999;">${rowId}</div>
+                        </td>
+                        <td>${statusHtml}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += html;
+            });
+        }
+
+        // Update/Manage Map Markers
+        function updateMapMarkers(devices) {
+            devices.forEach(d => {
+                if (!d.lat || !d.lng) return; // Skip if no location data
+
+                const latLng = new L.LatLng(d.lat, d.lng);
+
+                if (!markers[d.id]) {
+                    // Create new Marker
+                    let iconUrl = (d.type === 'ap') 
+                        ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png'
+                        : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png';
+
+                    let marker = L.marker(latLng, {
+                        icon: L.icon({
+                            iconUrl: iconUrl,
+                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                            iconSize: [25, 41], iconAnchor: [12, 41]
+                        })
+                    }).addTo(map).bindPopup(`<b>${d.name}</b><br>Type: ${d.type}<br>ID: ${d.id}`);
+
+                    markers[d.id] = marker; // Save reference
+                } else {
+                    // Move existing Marker (for Beacons moving or AP polling)
+                    markers[d.id].setLatLng(latLng);
+                    markers[d.id].bindPopup(`<b>${d.name}</b><br>Type: ${d.type}<br>ID: ${d.id}`).openPopup();
+                }
+            });
+        }
+
+        // --- 4. Device Management (Add) ---
+        
+        async function submitDevice() {
+            const type = document.getElementById('device-type').value;
+            const name = document.getElementById('device-name').value;
+            const lat = parseFloat(document.getElementById('device-lat').value);
+            const lng = parseFloat(document.getElementById('device-lng').value);
+
+            if (!name) return alert("Please enter a device name");
+
+            try {
+                const res = await fetch('/api/devices', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ type, name, lat, lng })
+                });
+                
+                if (res.ok) {
+                    alert("Device added to local DB!");
+                    // If you want it to show up in table immediately without reload
+                    // (In this specific design, we wait for the Aruba Poll interval or manual refresh)
+                } else {
+                    alert("Error adding device");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Server error. Make sure server.js is running.");
+            }
+        }
+
+    </script>
+</body>
+</html>
