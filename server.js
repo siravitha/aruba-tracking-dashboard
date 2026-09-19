@@ -115,11 +115,80 @@ function extractToken(payload) {
 
 function normalizeArubaArray(payload, keys) {
     if (!payload) return [];
+
+    const toArray = (value) => {
+        if (Array.isArray(value)) return value;
+        if (value && typeof value === 'object') return Object.values(value);
+        return value ? [value] : [];
+    };
+
     for (const key of keys) {
-        if (payload[key]) return Array.isArray(payload[key]) ? payload[key] : [payload[key]];
-        if (payload.data && payload.data[key]) return Array.isArray(payload.data[key]) ? payload.data[key] : [payload.data[key]];
+        if (payload[key]) return toArray(payload[key]);
+        if (payload.data && payload.data[key]) return toArray(payload.data[key]);
     }
+
+    for (const key of Object.keys(payload || {})) {
+        if (Array.isArray(payload[key])) return payload[key];
+    }
+
+    if (payload.data && typeof payload.data === 'object') {
+        for (const key of Object.keys(payload.data)) {
+            if (Array.isArray(payload.data[key])) return payload.data[key];
+        }
+    }
+
     return [];
+}
+
+async function loginToAruba(baseUrl) {
+    const loginCandidates = [
+        `${baseUrl}/api/v2/auth/login`,
+        `${baseUrl}/api/v2/login`,
+        `${baseUrl}/api/login`,
+        `${baseUrl}/api/auth/login`,
+        `${baseUrl}/api/v1/login`
+    ];
+
+    const payloadVariants = [
+        { username: process.env.ARUBA_USER, password: process.env.ARUBA_PASS },
+        { user: process.env.ARUBA_USER, password: process.env.ARUBA_PASS },
+        { username: process.env.ARUBA_USER, passwd: process.env.ARUBA_PASS },
+    ];
+
+    for (const loginUrl of loginCandidates) {
+        for (const body of payloadVariants) {
+            try {
+                const loginRes = await arubaClient.post(loginUrl, body, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const token = extractToken(loginRes.data);
+                if (token) {
+                    return { token, url: loginUrl, data: loginRes.data };
+                }
+            } catch (error) {
+                const msg = error.response?.data || error.message;
+                console.log(`>>> Login attempt failed for ${loginUrl}: ${msg}`);
+            }
+        }
+
+        try {
+            const formPayload = new URLSearchParams({
+                username: process.env.ARUBA_USER,
+                password: process.env.ARUBA_PASS
+            });
+            const loginRes = await arubaClient.post(loginUrl, formPayload, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            const token = extractToken(loginRes.data);
+            if (token) {
+                return { token, url: loginUrl, data: loginRes.data };
+            }
+        } catch (error) {
+            console.log(`>>> Form-login attempt failed for ${loginUrl}: ${error.response?.data || error.message}`);
+        }
+    }
+
+    return null;
 }
 
 async function syncWithAruba() {
@@ -129,30 +198,13 @@ async function syncWithAruba() {
     try {
         console.log(">>> Syncing with Aruba API...");
 
-        const loginCandidates = [
-            `${baseUrl}/api/v2/auth/login`,
-            `${baseUrl}/api/v2/login`,
-            `${baseUrl}/api/login`
-        ];
-
-        let token = null;
-        for (const loginUrl of loginCandidates) {
-            try {
-                const loginRes = await arubaClient.post(loginUrl, {
-                    username: process.env.ARUBA_USER,
-                    password: process.env.ARUBA_PASS
-                }, {
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                token = extractToken(loginRes.data);
-                if (token) {
-                    console.log(`>>> Aruba login success via ${loginUrl}`);
-                    break;
-                }
-            } catch (e) {
-                console.log(`>>> Login attempt failed for ${loginUrl}: ${e.message}`);
-            }
+        const loginResult = await loginToAruba(baseUrl);
+        if (!loginResult) {
+            throw new Error("No compatible Aruba login endpoint responded successfully");
         }
+
+        const { token, url: loginUrl } = loginResult;
+        console.log(`>>> Aruba login success via ${loginUrl}`);
 
         if (!token) throw new Error("Login failed - No token received");
 
