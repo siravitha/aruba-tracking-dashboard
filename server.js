@@ -2,146 +2,154 @@ const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
-const axios = require('axios'); // ใช้เรียก Aruba API
-require('dotenv').config();     // ดึงค่าจาก .env
-const fs = require('fs');       // สำหรับอ่านไฟล์ Static Location
+const axios = require('axios');
+require('dotenv').config();
+const fs = require('fs');
 
-// --- ส่วนการเชื่อมต่อฐานข้อมูล (ใช้ JSON แบบเดิม) ---
+// --- Database (ไฟล์ JSON เล็กๆ สำหรับเก็บ Name/Type) ---
 const DB_FILE = 'tracker_db.json';
-const LOCATIONS_FILE = 'static_locations.json'; // ไฟล์เก็บพิกัดยืนของ AP
-
-// ฟังก์ชันเริ่มต้นระบบ (Load ข้อมูล)
 function initData() {
-    if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ devices: [] }));
-    
-    // ถ้ายังไม่มีไฟล์กำหนดตำแหน่งบนแผนที่ ให้สร้างตัวอย่างไว้
-    if (!fs.existsSync(LOCATIONS_FILE)) {
-        const defaultLocations = [
-            { name: "AP-Floor1-Lobby", lat: 13.7563, lng: 100.5018 },
-            { name: "AP-Floor2-Office", lat: 13.7564, lng: 100.5020 },
-            { name: "BCN-Vendor-Area", lat: 13.7565, lng: 100.5015 }
-        ];
-        fs.writeFileSync(LOCATIONS_FILE, JSON.stringify(defaultLocations));
+    if (!fs.existsSync(DB_FILE)) {
+        // สร้างข้อมูลตัวอย่างหากยังไม่มีไฟล์
+        const initialData = { devices: [
+            { id: 'AP-01', name: 'Virtual-Controller', type: 'ap', ip: '192.168.100.5' },
+            { id: 'BCN-TEST', name: 'Visitor-Badge-A', type: 'beacon', battery: 95 }
+        ]};
+        fs.writeFileSync(DB_FILE, JSON.stringify(initialData));
     }
 }
+initData();
 
-// ฟังก์ชันอ่านตำแหน่งคงที่ (Static Location) จากไฟล์
-function getStaticLocations() {
-    const data = JSON.parse(fs.readFileSync(LOCATIONS_FILE, 'utf-8'));
-    let map = {};
-    data.forEach(l => map[l.name] = { lat: l.lat, lng: l.lng });
-    return map;
-}
-
-// --- ส่วนหลักของ Server (Aruba Integration) ---
+// --- เริ่มต้น Server ---
 const app = express();
-app.use(cors());
-app.use(express.json());
-
+app.use(cors()); // เปิดรับ Connection จาก Browser
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-let currentDevices = []; // เก็บข้อมูลล่าสุดที่ดึงมาจาก Aruba
+// ** จุดสำคัญ:** ส่งไฟล์ index.html กลับไปเมื่อเข้าหน้าหลัก (/) เพื่อแก้ Error "Cannot GET"
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
 
-// 1. ดึง Token เพื่อเข้า API ของ Aruba
-async function getArubaToken() {
+console.log("Starting Aruba Instant Tracking Server...");
+
+// --- ฟังก์ชันดึงข้อมูลจริงจาก Aruba Virtual Controller (Instant OS API v2) ---
+async function syncWithAruba() {
+    const baseUrl = process.env.ARUBA_URL;
+    
+    if (!baseUrl) return null; // ไม่มี IP ให้ใช้โหมดจำลอง
+
     try {
-        const url = `${process.env.ARUBA_URL}/rest/auth`;
-        const res = await axios.post(url, {
+        console.log(">>> Logging in to Aruba Controller...");
+        
+        // 1. Login เพื่อเอา Token (Instant OS API)
+        const loginRes = await axios.post(`${baseUrl}/api/v2/auth/login`, {
             username: process.env.ARUBA_USER,
             password: process.env.ARUBA_PASS
         });
-        return res.data.token;
-    } catch (error) {
-        console.error("Auth Error:", error.response?.data || error.message);
-        return null;
-    }
-}
 
-// 2. ดึงข้อมูล AP/Beacon ทั้งหมดจาก Controller
-async function fetchArubaDevices() {
-    const token = await getArubaToken();
-    if (!token) {
-        console.log("Failed to login to Aruba, using default data.");
-        return [];
-    }
-
-    try {
-        // API Endpoint สำหรับดูสถานะ AP (Mobility REST API)
-        const url = `${process.env.ARUBA_URL}/rest/v1/wireless/monitor/access-points`;
-        const res = await axios.get(url, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-
-        // แปลงข้อมูลดิบเป็นรูปแบบที่ Dashboard ของเราเข้าใจ
-        const devicesFromController = res.data.map(dev => {
-            // หาพิกัดยืนของ AP จากไฟล์ static_locations.json (เพราะ API ไม่ได้ให้มา)
-            let coords = getStaticLocations()[dev.name] || null; 
-
-            return {
-                id: dev.id, // หรือ dev.mac
-                name: dev.name,
-                type: dev.capabilities?.includes('beacon') ? 'beacon' : 'ap', 
-                status: dev.status === 'UP' ? 'online' : 'offline',
-                rssi: -60, // (ตัวอย่างค่า RSSI)
-                lat: coords ? coords.lat : null, // ถ้าไม่มีพิกัดเก็บไว้ จะเป็น null
-                lng: coords ? coords.lng : null
-            };
-        });
-
-        currentDevices = devicesFromController;
-        return devicesFromController;
-
-    } catch (error) {
-        console.error("Fetch Error:", error.response?.data || error.message);
-        return [];
-    }
-}
-
-// 3. จำลองการขยับตำแหน่ง Beacon (กรณีนี้สมมติว่า Beacon เคลื่อนที่ ถ้าเป็น AP จะอยู่นิ่ง)
-function simulateBeaconMovement(devices) {
-    return devices.map(d => {
-        // ถ้าเป็น Beacons และไม่มีพิกัดยืน ให้สุ่มเดินเล่นรอบๆ
-        if (d.type === 'beacon' && !d.lat) {
-            d.lat = 13.7560 + Math.random() * 0.001; 
-            d.lng = 100.5010 + Math.random() * 0.001;
-        } else if (d.lat) {
-             // ถ้ามีพิกัดยืน (เช่น AP) ให้ขยับนิดหน่อยเพื่อให้เห็นว่า Live Data ทำงาน
-             d.lat += (Math.random() - 0.5) * 0.0001;
-             d.lng += (Math.random() - 0.5) * 0.0001;
-        }
-        return d;
-    });
-}
-
-// --- เริ่มต้นทำงาน ---
-initData(); // เริ่มโหลดไฟล์ข้อมูล
-
-setInterval(async () => {
-    console.log("Fetching Aruba Controller Data...");
-    
-    let devices = await fetchArubaDevices();
-    
-    if (devices.length > 0) {
-        // ถ้าดึงได้ ให้ทำการจำลองตำแหน่งสำหรับ Beacons
-        devices = simulateBeaconMovement(devices);
+        const token = loginRes.data.access_token || loginRes.data.token; // รองรับ Token key หลายแบบ
         
-        // ส่งข้อมูลไปให้หน้าเว็บ
-        io.emit('aruba-sync', {
-            timestamp: new Date(),
-            devices: devices
+        if (!token) throw new Error("Login failed - No token received");
+
+        const headers = { Authorization: `Bearer ${token}` };
+        let devicesFromController = [];
+
+        // 2. ดึงข้อมูล AP (Instant OS Endpoint)
+        try {
+            const apRes = await axios.get(`${baseUrl}/api/v2/wireless/monitor/access_points`, { headers });
+            // โครงสร้างข้อมูลอาจแตกต่างกันตามเวอร์ชัน แต่ปกติจะอยู่ใน key 'access_points' หรือ 'data'
+            const aps = apRes.data.access_points || apRes.data.wireless_aps || [];
+            
+            devicesFromController = aps.map(d => ({
+                id: d.mac_addr || d.mac,      // ID (MAC Address)
+                name: d.name || d.model,      // ชื่อ AP
+                type: 'ap',                   // ประเภทคงที่เป็น AP
+                ip: d.ip_addr || null,        // IP ของ AP
+                status: d.state === 'connected' ? 'online' : d.state, // สถานะ (connected/uplink_down)
+                lat: 0, lng: 0               // Instant OS มักไม่ส่ง Lat/Lng มาให้โดยตรงถ้าไม่ได้ Calibrate
+            }));
+        } catch (e) { console.log(">>> AP Fetch Skipped/Error:", e.message); }
+
+        // 3. ดึงข้อมูล Beacon (IoT Beacons)
+        try {
+            const beaconRes = await axios.get(`${baseUrl}/api/v2/wireless/monitor/bluetooth_beacons`, { headers });
+            const beacons = beaconRes.data.bluetooth_beacons || [];
+
+            const newBeacons = beacons.map(b => ({
+                id: b.mac_addr,
+                name: b.name || `BCN-${b.mac_addr.slice(-6)}`,
+                type: 'beacon',
+                battery: b.battery_life || null, // % อายุแบตเตอรี่
+                rssi: b.rssi || null,            // ความแรงสัญญาณ
+                lat: 0, lng: 0                  // ถ้าไม่มี location จะส่งค่าว่างมา
+            }));
+            
+            devicesFromController = [...devicesFromController, ...newBeacons];
+        } catch (e) { console.log(">>> Beacon Fetch Skipped/Error:", e.message); }
+
+        return devicesFromController.length > 0 ? devicesFromController : null;
+
+    } catch (error) {
+        console.error(">>> Aruba API Failed:", error.response?.data || error.message);
+        return null; // ส่งค่า null กลับไปเพื่อให้ใช้โหมดจำลอง
+    }
+}
+
+// --- ฟังก์ชันจำลองข้อมูล (Mock Data) - ใช้เมื่อต่อ API ไม่ได้ ---
+function runSimulation() {
+    let data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    data.devices.forEach(d => {
+        // จำลองการขยับตำแหน่งให้ Beacons เสมอ
+        if (d.type === 'beacon') {
+            // ถ้ายังไม่มีพิกัด เริ่มสุ่มจุดรอบๆ กรุงเทพฯ
+            if (!d.lat) { d.lat = 13.7560 + Math.random(); d.lng = 100.5010 + Math.random(); } 
+            d.lat += (Math.random() - 0.5) * 0.0002; // เลื่อนนิดหน่อย
+            d.lng += (Math.random() - 0.5) * 0.0002;
+            
+            // สุ่มแบตเตอรี่ลดลงบ้าง
+            if(Math.random() > 0.9 && d.battery > 10) d.battery -= 1;
+        } else {
+            // AP ยืนนิ่งๆ (สมมติว่ามีพิกัดยืนอยู่แล้วใน DB หรือใช้จุดเริ่มต้น)
+            if (!d.lat) { d.lat = 13.7563; d.lng = 100.5018; } 
+        }
+    });
+    fs.writeFileSync(DB_FILE, JSON.stringify(data)); // บันทึกตำแหน่งใหม่ลงไฟล์
+    return data.devices;
+}
+
+// --- Loop ทำงานทุก 10 วินาที ---
+setInterval(async () => {
+    console.log("Checking Aruba Controller...");
+    
+    // พยายามดึงจาก Aruba จริงก่อน
+    const realData = await syncWithAruba();
+    
+    let finalDevices = [];
+
+    if (realData && realData.length > 0) {
+        // ถ้าได้ข้อมูลจริง ให้ใช้เลย และอัปเดตตำแหน่งจำลองในกรณีที่ไม่มีค่าจริงมา
+        finalDevices = realData.map(d => {
+            // ถ้าเป็น Beacons และไม่มีการ Calibrate (lat=0) ให้ขยับตามเวลา (Simulation Mode ผสมผสาน)
+            if (d.type === 'beacon' && d.lat === 0 && d.lng === 0) {
+                d.lat = 13.7560 + Math.random() * 0.001; 
+                d.lng = 100.5010 + Math.random() * 0.001;
+            }
+            return d;
         });
     } else {
-        console.log("No data from Aruba. Reverting to mock simulation for demo.");
-        // (ส่วนนี้จะกลับไปใช้ logic เดิมถ้าต่อ API ไม่ได้ เพื่อให้เห็นภาพ)
+        // ถ้าล้มเหลว (เช่น IP ผิด, SSL Error) ให้ใช้โหมดจำลองทั้งหมด (Simulation Mode)
+        finalDevices = runSimulation();
     }
-}, 30000); // ดึงข้อมูลทุก 30 วินาที (Aruba API อาจจำกัดการดึงถี่เกินไป)
 
-// API สำหรับหน้าเว็บเรียกข้อมูลปัจจุบัน
-app.get('/api/status', (req, res) => {
-    res.json({ devices: currentDevices });
-});
+    // ส่งข้อมูลไปอัปเดตหน้า Dashboard
+    io.emit('aruba-sync', { 
+        timestamp: new Date(), 
+        devices: finalDevices 
+    });
+
+}, 10000); // ทำงานทุก 10 วินาที (อย่าถี่เกินไปเพื่อลดภาระ API ของ Aruba)
 
 server.listen(process.env.PORT || 3000, () => {
-    console.log(`Aruba Gateway Server listening on port ${process.env.PORT || 3000}`);
+    console.log(`Dashboard listening on http://localhost:${process.env.PORT || 3000}`);
 });

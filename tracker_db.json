@@ -11,9 +11,9 @@
       "id": "BCN-001",
       "type": "beacon",
       "name": "Visitor-Badge-A",
-      "lat": 13.7564,
-      "lng": 100.502,
-      "battery": 98
+      "lat": 13.756509602148505,
+      "lng": 100.50306443162333,
+      "battery": 23
     },
     {
       "id": "AP-02",

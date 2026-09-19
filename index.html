@@ -2,159 +2,107 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aruba Tracking & Management System</title>
-    
-    <!-- Leaflet Map CSS -->
+    <title>Aruba Instant Tracking Dashboard</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
-        /* --- Global Styles --- */
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; overflow: hidden; display: flex; }
-
-        /* --- Sidebar (Left Panel) --- */
-        .sidebar { width: 380px; background: #f4f6f8; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        .sidebar h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        /* Sidebar */
+        .sidebar { width: 400px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; }
+        h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; }
         
         /* Tabs */
-        .tabs { display: flex; background: #e9ecef; border-radius: 6px; padding: 4px; margin-bottom: 20px; }
-        .tab-btn { flex: 1; padding: 8px; text-align: center; cursor: pointer; border: none; background: transparent; font-weight: 600; color: #6c757d; border-radius: 4px; transition: all 0.2s; }
+        .tabs { display: flex; background: #e9ecef; border-radius: 6px; padding: 4px; margin-bottom: 15px; gap: 5px; }
+        .tab-btn { flex: 1; padding: 8px; border: none; cursor: pointer; font-weight: bold; color: #6c757d; background: transparent; border-radius: 4px; transition: 0.2s; }
         .tab-btn.active { background: white; color: #0d6efd; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        
-        /* Content Areas */
+
+        /* Content */
         .content-section { flex: 1; overflow-y: auto; display: none; }
         .content-section.active { display: block; }
 
-        /* Table Styling */
-        table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        th { background-color: #f8f9fa; text-align: left; padding: 12px 10px; border-bottom: 2px solid #dee2e6; color: #495057; font-weight: bold; }
-        td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
-        tr:last-child td { border-bottom: none; }
+        /* Table */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #f8f9fa; color: #495057; font-weight: bold; }
         
-        /* Badges */
-        .type-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: white; display: inline-block; width: 60px; text-align: center; }
+        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75em; font-weight: bold; display: inline-block; width: 65px; text-align: center; }
         .bg-ap { background-color: #0d6efd; } /* Blue */
         .bg-bcn { background-color: #198754; } /* Green */
-        
-        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .st-on { background-color: #198754; box-shadow: 0 0 4px #198754; }
-        .st-off { background-color: #dc3545; opacity: 0.5; }
 
-        /* Form Styling */
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 6px; font-weight: 600; color: #495057; font-size: 13px; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
-        input:focus, select:focus { border-color: #86b7fe; outline: 0; }
+        /* Map */
+        #map { flex: 1; height: 100%; width: 100%; z-index: 1; position: absolute; top: 0; left: 0; }
         
-        .btn-action { width: 100%; padding: 12px; background: #0d6efd; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
-        .btn-action:hover { background: #0b5ed7; }
-
-        /* --- Map Area (Right Panel) --- */
-        .map-container { flex: 1; position: relative; }
-        #map { height: 100%; width: 100%; z-index: 1; }
-        
-        /* Info Overlay on Map */
-        .map-info { position: absolute; top: 10px; right: 10px; z-index: 500; background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
-
-        /* Responsive for Mobile */
-        @media (max-width: 768px) {
-            body { flex-direction: column; }
-            .sidebar { width: 100%; height: 40vh; border-right: none; border-bottom: 1px solid #ddd; }
-            .map-container { height: 60vh; }
-        }
+        .info-overlay { position: absolute; top: 15px; right: 15px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 999; font-size: 13px; }
     </style>
 </head>
 <body>
 
-    <!-- Sidebar Section -->
+    <!-- Sidebar -->
     <div class="sidebar">
-        <h2>📡 Aruba Tracking</h2>
+        <h2>📡 Aruba Tracker</h2>
         
-        <!-- Tab Navigation -->
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('list')">Device List</button>
+            <button class="tab-btn active" onclick="switchTab('list')">Devices List</button>
             <button class="tab-btn" onclick="switchTab('add')">Add Device</button>
         </div>
 
-        <!-- Section 1: Table (List) -->
+        <!-- Section 1: Table -->
         <div id="view-list" class="content-section active">
             <table>
                 <thead>
                     <tr>
                         <th>Type</th>
-                        <th>Name / ID</th>
+                        <th>Name / IP</th>
                         <th>Status</th>
                     </tr>
                 </thead>
-                <tbody id="device-table-body">
-                    <!-- Data will be injected here -->
-                    <tr><td colspan="3" style="text-align:center; color:#999;">Connecting to Aruba...</td></tr>
-                </tbody>
+                <tbody id="device-table-body"></tbody>
             </table>
         </div>
 
-        <!-- Section 2: Add Device Form -->
+        <!-- Section 2: Add Device -->
         <div id="view-add" class="content-section">
             <h3 style="margin-top:0; font-size:18px;">Register New Device</h3>
-            
             <div class="form-group">
-                <label for="device-type">Device Type</label>
-                <select id="device-type" onchange="toggleCoords()">
+                <label for="device-type">Type</label>
+                <select id="device-type" onchange="toggleIp()" style="width:100%; padding:8px; margin-bottom:10px;">
                     <option value="ap">Access Point (AP)</option>
                     <option value="beacon">Aruba Beacon</option>
                 </select>
             </div>
-
-            <div class="form-group">
-                <label for="device-name">Friendly Name</label>
-                <input type="text" id="device-name" placeholder="e.g. Entrance-AP-01">
+            <div class="form-group" style="margin-bottom:10px;">
+                <label for="device-name">Name</label>
+                <input type="text" id="device-name" placeholder="e.g. Entrance-AP-01" style="width:100%; padding:8px; box-sizing:border-box;">
             </div>
-
-            <!-- Coordinate inputs (Always shown for mapping, but usually static for AP) -->
-            <div class="form-group">
-                <label>Latitude (Start)</label>
-                <input type="number" step="0.000001" id="device-lat" value="13.756300">
+            <div class="form-group" id="ip-input-group" style="margin-bottom:10px;">
+                <label for="device-ip">IP Address</label>
+                <input type="text" id="device-ip" placeholder="e.g. 192.168.1.10" style="width:100%; padding:8px; box-sizing:border-box;">
             </div>
-             <div class="form-group">
-                <label>Longitude (Start)</label>
-                <input type="number" step="0.000001" id="device-lng" value="100.501800">
-            </div>
-
-            <button class="btn-action" onclick="submitDevice()">Connect to Controller</button>
+             <!-- ซ่อน Lat/Lng input สำหรับ simplicity ในการ Add -->
+            <p style="font-size:11px; color:#666;">* Coordinates will be assigned automatically for demo.</p>
+            <button onclick="submitDevice()" class="tab-btn active" style="background:#0d6efd; color:white; margin-top:10px;">Connect to Controller</button>
         </div>
     </div>
 
-    <!-- Map Section -->
-    <div class="map-container">
-        <div class="map-info">
-            Live Sync from Aruba Controller<br>Updated: <span id="last-updated">--:--</span>
-        </div>
-        <div id="map"></div>
-    </div>
+    <!-- Map -->
+    <div id="map"></div>
+    <div class="info-overlay">System Status: <span id="sys-status" style="color:red">Disconnected</span></div>
 
     <!-- Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 
     <script>
-        // --- 1. Initialization & UI Logic ---
-        
-        // Map Setup (Leaflet)
+        // --- Map Setup ---
         var map = L.map('map').setView([13.7563, 100.5018], 17);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
-
-        // Store markers to update them later without recreating
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
         var markers = {}; 
 
-        // Tab Switching Logic
-        function switchTab(tabName) {
+        // --- UI Functions ---
+        function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
-
-            if (tabName === 'list') {
+            if (tab === 'list') {
                 document.querySelector('.tabs button:nth-child(1)').classList.add('active');
                 document.getElementById('view-list').classList.add('active');
             } else {
@@ -163,126 +111,107 @@
             }
         }
 
-        // Toggle coordinates display if needed (optional enhancement)
-        function toggleCoords() {
+        function toggleIp() {
             const type = document.getElementById('device-type').value;
-            // In this logic, we always allow coordinate input for simplicity
+            // แสดงช่อง IP เฉพาะเมื่อเลือก AP (เนื่องจาก Beacons มักใช้ DHCP/Static ที่จัดการต่างกัน)
+            document.getElementById('ip-input-group').style.display = (type === 'ap') ? 'block' : 'none';
         }
 
-        // --- 2. Socket.io Connection & Sync Logic ---
+        // --- Realtime Logic ---
         const socket = io('http://localhost:3000');
 
-        // Listen for Aruba Controller Updates
         socket.on('aruba-sync', function(data) {
-            console.log("Received Data:", data);
-            
-            // Update Timestamp UI
-            document.getElementById('last-updated').innerText = new Date().toLocaleTimeString();
+            // อัปเดตสถานะระบบ
+            document.getElementById('sys-status').innerText = "Live Sync";
+            document.getElementById('sys-status').style.color = "#198754";
 
-            // Update Table
+            // 1. อัปเดตตาราง (Table)
             renderTable(data.devices);
             
-            // Update Map (Create new markers or move existing ones)
+            // 2. อัปเดตแผนที่ (Map)
             updateMapMarkers(data.devices);
         });
 
-        // --- 3. Rendering Functions ---
-
-        // Draw/update the sidebar table
         function renderTable(devices) {
             const tbody = document.getElementById('device-table-body');
-            tbody.innerHTML = ''; // Clear old rows
+            tbody.innerHTML = '';
 
             devices.forEach(d => {
-                // Determine Badge Color
-                let badgeClass = d.type === 'ap' ? 'bg-ap' : 'bg-bcn';
-                let badgeText = d.type.toUpperCase();
+                let badgeColor = d.type === 'ap' ? 'bg-ap' : 'bg-bcn';
+                let statusHtml = (d.status === 'online' || d.status === 'connected') 
+                    ? '<span style="color:green; font-weight:bold">● Online</span>' 
+                    : `<span style="color:gray;">${d.status || 'Offline'}</span>`;
 
-                // Determine Status Style
-                let statusHtml = '<span style="color:#999;">Offline</span>';
-                if(d.status === 'online') {
-                    statusHtml = `<span class="status-dot st-on"></span> <span style="color:#198754">Online</span>`;
-                } else if (d.status === 'up' || d.status === 'connected') {
-                    statusHtml = `<span class="status-dot st-on"></span> <span style="color:blue">Connected</span>`;
-                }
+                // แสดง IP Address
+                let ipDisplay = d.ip || (d.type === 'beacon' ? '-' : 'DHCP/None');
 
-                // Get ID for deletion reference (Use MAC or ID provided by Aruba)
-                let rowId = d.id || 'Unknown';
-
-                const html = `
+                const row = `
                     <tr>
-                        <td><span class="type-badge ${badgeClass}">${badgeText}</span></td>
+                        <td><span class="badge ${badgeColor}">${d.type.toUpperCase()}</span></td>
                         <td>
-                            <div style="font-weight:bold; font-size:13px;">${d.name || d.mac}</div>
-                            <div style="font-size:10px; color:#999;">${rowId}</div>
+                            <div style="font-weight:bold;">${d.name}</div>
+                            <div style="color:#6c757d; font-size:11px;"><i class="fas fa-network-wired"></i> ${ipDisplay}</div>
                         </td>
                         <td>${statusHtml}</td>
                     </tr>
                 `;
-                tbody.innerHTML += html;
+                tbody.innerHTML += row;
             });
         }
 
-        // Update/Manage Map Markers
         function updateMapMarkers(devices) {
             devices.forEach(d => {
-                if (!d.lat || !d.lng) return; // Skip if no location data
+                if (!d.lat || !d.lng) return; // ข้ามถ้าไม่มีพิกัด
 
                 const latLng = new L.LatLng(d.lat, d.lng);
+                
+                // Popup Content: แสดง IP และ Battery (สำคัญสำหรับ Beacon)
+                let popupContent = `
+                    <b style="font-size:14px;">${d.name}</b><br>
+                    Type: <span style="color:${d.type === 'ap' ? 'blue' : 'green'}; font-weight:bold">${d.type.toUpperCase()}</span><br>
+                    ----------------<br>
+                    ID/MAC: ${d.id}<br>
+                    IP Address: ${d.ip || (d.battery ? 'N/A (BLE)' : 'DHCP')}<br>
+                    Battery: ${d.battery ? d.battery + '%' : 'N/A'}<br>
+                    RSSI: ${d.rssi || '-'} dBm
+                `;
 
+                // สร้าง Marker ใหม่ถ้ายังไม่มี หรือ อัปเดตตำแหน่งถ้ามีแล้ว
                 if (!markers[d.id]) {
-                    // Create new Marker
                     let iconUrl = (d.type === 'ap') 
                         ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png'
                         : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png';
 
-                    let marker = L.marker(latLng, {
-                        icon: L.icon({
-                            iconUrl: iconUrl,
-                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                            iconSize: [25, 41], iconAnchor: [12, 41]
-                        })
-                    }).addTo(map).bindPopup(`<b>${d.name}</b><br>Type: ${d.type}<br>ID: ${d.id}`);
+                    let marker = L.marker(latLng, { 
+                        icon: L.icon({ iconUrl: iconUrl, shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41] })
+                    }).addTo(map).bindPopup(popupContent);
 
-                    markers[d.id] = marker; // Save reference
+                    markers[d.id] = marker;
                 } else {
-                    // Move existing Marker (for Beacons moving or AP polling)
+                    // ขยับจุดเดิม (สำคัญมากสำหรับ Beacons ที่เคลื่อนที่)
                     markers[d.id].setLatLng(latLng);
-                    markers[d.id].bindPopup(`<b>${d.name}</b><br>Type: ${d.type}<br>ID: ${d.id}`).openPopup();
+                    markers[d.id].setPopupContent(popupContent);
                 }
             });
         }
 
-        // --- 4. Device Management (Add) ---
-        
+        // --- Add Device Function (Local Only) ---
         async function submitDevice() {
             const type = document.getElementById('device-type').value;
             const name = document.getElementById('device-name').value;
-            const lat = parseFloat(document.getElementById('device-lat').value);
-            const lng = parseFloat(document.getElementById('device-lng').value);
+            const ip = document.getElementById('device-ip').value || null;
 
             if (!name) return alert("Please enter a device name");
 
             try {
-                const res = await fetch('/api/devices', {
+                await fetch('/api/devices', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ type, name, lat, lng })
+                    body: JSON.stringify({ type, name, ip })
                 });
-                
-                if (res.ok) {
-                    alert("Device added to local DB!");
-                    // If you want it to show up in table immediately without reload
-                    // (In this specific design, we wait for the Aruba Poll interval or manual refresh)
-                } else {
-                    alert("Error adding device");
-                }
-            } catch (err) {
-                console.error(err);
-                alert("Server error. Make sure server.js is running.");
-            }
+                alert("Device added to local DB (will appear after Aruba Poll)");
+            } catch(e) { console.error(e); }
         }
-
     </script>
 </body>
 </html>
