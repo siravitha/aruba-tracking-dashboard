@@ -8,26 +8,34 @@
         body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
         /* Sidebar */
-        .sidebar { width: 400px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; }
-        h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; }
+        .sidebar { width: 420px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; overflow-y: auto; }
+        h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
         
         /* Tabs */
         .tabs { display: flex; background: #e9ecef; border-radius: 6px; padding: 4px; margin-bottom: 15px; gap: 5px; }
-        .tab-btn { flex: 1; padding: 8px; border: none; cursor: pointer; font-weight: bold; color: #6c757d; background: transparent; border-radius: 4px; transition: 0.2s; }
+        .tab-btn { flex: 1; padding: 8px; border: none; cursor: pointer; font-weight: bold; color: #6c757d; background: transparent; border-radius: 4px; transition: 0.2s; font-size: 13px; }
         .tab-btn.active { background: white; color: #0d6efd; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-        /* Content */
-        .content-section { flex: 1; overflow-y: auto; display: none; }
+        /* Content Sections */
+        .content-section { flex: 1; overflow-y: auto; display: none; margin-top: 10px; }
         .content-section.active { display: block; }
 
-        /* Table */
-        table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background-color: #f8f9fa; color: #495057; font-weight: bold; }
+        /* Table Styles (Devices) */
+        table.devices { width: 100%; border-collapse: collapse; font-size: 13px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .devices th, .devices td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        .devices th { background-color: #f8f9fa; color: #495057; font-weight: bold; }
         
-        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75em; font-weight: bold; display: inline-block; width: 65px; text-align: center; }
-        .bg-ap { background-color: #0d6efd; } /* Blue */
-        .bg-bcn { background-color: #198754; } /* Green */
+        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75em; font-weight: bold; display: inline-block; width: 65px; text-align: center; margin-bottom: 2px;}
+        .bg-ap { background-color: #0d6efd; } 
+        .bg-bcn { background-color: #198754; }
+
+        /* Styles for System Report Table */
+        table.report-table { width: 100%; border-collapse: collapse; font-size: 12px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .report-table th { background-color: #343a40; color: white; padding: 6px; text-align: left; }
+        .report-table td { padding: 6px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .status-success { color: #198754; font-weight: bold; }
+        .status-error { color: #dc3545; font-weight: bold; }
+        .status-info { color: #0d6efd; font-weight: bold; }
 
         /* Map */
         #map { flex: 1; height: 100%; width: 100%; z-index: 1; position: absolute; top: 0; left: 0; }
@@ -42,13 +50,14 @@
         <h2>📡 Aruba Tracker</h2>
         
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('list')">Devices List</button>
+            <button class="tab-btn active" onclick="switchTab('list')">Devices</button>
             <button class="tab-btn" onclick="switchTab('add')">Add Device</button>
+            <button class="tab-btn" onclick="switchTab('report')">System Report</button>
         </div>
 
-        <!-- Section 1: Table -->
+        <!-- Section 1: Table (Devices) -->
         <div id="view-list" class="content-section active">
-            <table>
+            <table class="devices">
                 <thead>
                     <tr>
                         <th>Type</th>
@@ -65,7 +74,7 @@
             <h3 style="margin-top:0; font-size:18px;">Register New Device</h3>
             <div class="form-group">
                 <label for="device-type">Type</label>
-                <select id="device-type" onchange="toggleIp()" style="width:100%; padding:8px; margin-bottom:10px;">
+                <select id="device-type" onchange="toggleIp()" style="width:100%; padding:8px; margin-bottom:10px; border-radius:4px;">
                     <option value="ap">Access Point (AP)</option>
                     <option value="beacon">Aruba Beacon</option>
                 </select>
@@ -78,10 +87,27 @@
                 <label for="device-ip">IP Address</label>
                 <input type="text" id="device-ip" placeholder="e.g. 192.168.1.10" style="width:100%; padding:8px; box-sizing:border-box;">
             </div>
-             <!-- ซ่อน Lat/Lng input สำหรับ simplicity ในการ Add -->
-            <p style="font-size:11px; color:#666;">* Coordinates will be assigned automatically for demo.</p>
-            <button onclick="submitDevice()" class="tab-btn active" style="background:#0d6efd; color:white; margin-top:10px;">Connect to Controller</button>
+            <button onclick="submitDevice()" class="tab-btn active" style="background:#0d6efd; color:white; margin-top:10px; width:100%;">Connect to Controller</button>
         </div>
+
+        <!-- Section 3: System Report (ใหม่) -->
+        <div id="view-report" class="content-section">
+            <h4 style="margin-bottom:10px; color:#555;">Sync Activity Log</h4>
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th style="width: 70px;">Time</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody id="report-table-body">
+                    <tr><td colspan="4" style="text-align:center; color:#999;">Waiting for system data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
     </div>
 
     <!-- Map -->
@@ -102,47 +128,70 @@
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.content-section').forEach(c => c.classList.remove('active'));
+            
             if (tab === 'list') {
                 document.querySelector('.tabs button:nth-child(1)').classList.add('active');
                 document.getElementById('view-list').classList.add('active');
-            } else {
+            } else if (tab === 'add') {
                 document.querySelector('.tabs button:nth-child(2)').classList.add('active');
                 document.getElementById('view-add').classList.add('active');
+            } else if (tab === 'report') {
+                document.querySelector('.tabs button:nth-child(3)').classList.add('active');
+                document.getElementById('view-report').classList.add('active');
             }
         }
 
         function toggleIp() {
             const type = document.getElementById('device-type').value;
-            // แสดงช่อง IP เฉพาะเมื่อเลือก AP (เนื่องจาก Beacons มักใช้ DHCP/Static ที่จัดการต่างกัน)
             document.getElementById('ip-input-group').style.display = (type === 'ap') ? 'block' : 'none';
         }
 
         // --- Realtime Logic ---
         const socket = io('http://localhost:3000');
 
+        // 1. รับข้อมูลอุปกรณ์ (เดิม)
         socket.on('aruba-sync', function(data) {
-            // อัปเดตสถานะระบบ
             document.getElementById('sys-status').innerText = "Live Sync";
             document.getElementById('sys-status').style.color = "#198754";
-
-            // 1. อัปเดตตาราง (Table)
             renderTable(data.devices);
-            
-            // 2. อัปเดตแผนที่ (Map)
             updateMapMarkers(data.devices);
+        });
+
+        // 2. รับข้อมูลรายงาน (ใหม่)
+        socket.on('system-reports', function(data) {
+            const tbody = document.getElementById('report-table-body');
+            if (!data.logs || data.logs.length === 0) return;
+
+            let html = '';
+            data.logs.forEach(log => {
+                // กำหนดสีตามสถานะ
+                let statusClass = 'status-info'; // Default (Pending/Info)
+                let statusIcon = '⏳';
+                
+                if (log.status === 'Success') { statusClass = 'status-success'; statusIcon = '✅'; }
+                if (log.status === 'Error') { statusClass = 'status-error'; statusIcon = '❌'; }
+
+                html += `
+                    <tr>
+                        <td style="font-family:monospace;">${log.time}</td>
+                        <td><span class="${statusClass}">${statusIcon} ${log.status.toUpperCase()}</span></td>
+                        <td>${log.source}</td>
+                        <td>${log.detail} (Count: ${log.count})</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
         });
 
         function renderTable(devices) {
             const tbody = document.getElementById('device-table-body');
             tbody.innerHTML = '';
-
             devices.forEach(d => {
                 let badgeColor = d.type === 'ap' ? 'bg-ap' : 'bg-bcn';
                 let statusHtml = (d.status === 'online' || d.status === 'connected') 
                     ? '<span style="color:green; font-weight:bold">● Online</span>' 
                     : `<span style="color:gray;">${d.status || 'Offline'}</span>`;
 
-                // แสดง IP Address
                 let ipDisplay = d.ip || (d.type === 'beacon' ? '-' : 'DHCP/None');
 
                 const row = `
@@ -161,11 +210,9 @@
 
         function updateMapMarkers(devices) {
             devices.forEach(d => {
-                if (!d.lat || !d.lng) return; // ข้ามถ้าไม่มีพิกัด
-
+                if (!d.lat || !d.lng) return;
                 const latLng = new L.LatLng(d.lat, d.lng);
                 
-                // Popup Content: แสดง IP และ Battery (สำคัญสำหรับ Beacon)
                 let popupContent = `
                     <b style="font-size:14px;">${d.name}</b><br>
                     Type: <span style="color:${d.type === 'ap' ? 'blue' : 'green'}; font-weight:bold">${d.type.toUpperCase()}</span><br>
@@ -176,7 +223,6 @@
                     RSSI: ${d.rssi || '-'} dBm
                 `;
 
-                // สร้าง Marker ใหม่ถ้ายังไม่มี หรือ อัปเดตตำแหน่งถ้ามีแล้ว
                 if (!markers[d.id]) {
                     let iconUrl = (d.type === 'ap') 
                         ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png'
@@ -188,14 +234,12 @@
 
                     markers[d.id] = marker;
                 } else {
-                    // ขยับจุดเดิม (สำคัญมากสำหรับ Beacons ที่เคลื่อนที่)
                     markers[d.id].setLatLng(latLng);
                     markers[d.id].setPopupContent(popupContent);
                 }
             });
         }
 
-        // --- Add Device Function (Local Only) ---
         async function submitDevice() {
             const type = document.getElementById('device-type').value;
             const name = document.getElementById('device-name').value;
@@ -209,7 +253,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ type, name, ip })
                 });
-                alert("Device added to local DB (will appear after Aruba Poll)");
+                alert("Device added to local DB!");
             } catch(e) { console.error(e); }
         }
     </script>
