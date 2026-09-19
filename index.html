@@ -143,7 +143,7 @@
         }
 
         // --- Realtime Logic ---
-        const socket = io('http://localhost:3000');
+        const socket = io('http://localhost:8080');
 
         socket.on('aruba-sync', function(data) {
             document.getElementById('sys-status').innerText = "Live Sync";
