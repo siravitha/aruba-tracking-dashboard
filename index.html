@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aruba Tracking & Management System</title>
+    
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        /* --- Global Styles --- */
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; overflow: hidden; display: flex; }
+
+        /* --- Sidebar (Left Panel) --- */
+        .sidebar { width: 380px; background: #f4f6f8; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; z-index: 1000; }
+        
+        .sidebar h2 { color: #005eb8; margin-top: 0; font-size: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        
+        /* Tabs */
+        .tabs { display: flex; background: #e9ecef; border-radius: 6px; padding: 4px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; padding: 8px; text-align: center; cursor: pointer; border: none; background: transparent; font-weight: 600; color: #6c757d; border-radius: 4px; transition: all 0.2s; }
+        .tab-btn.active { background: white; color: #0d6efd; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        
+        /* Content Areas */
+        .content-section { flex: 1; overflow-y: auto; display: none; }
+        .content-section.active { display: block; }
+
+        /* Table Styling */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        th { background-color: #f8f9fa; text-align: left; padding: 12px 10px; border-bottom: 2px solid #dee2e6; color: #495057; font-weight: bold; }
+        td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        
+        /* Badges */
+        .type-badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: white; display: inline-block; width: 60px; text-align: center; }
+        .bg-ap { background-color: #0d6efd; } /* Blue */
+        .bg-bcn { background-color: #198754; } /* Green */
+        
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .st-on { background-color: #198754; box-shadow: 0 0 4px #198754; }
+        .st-off
