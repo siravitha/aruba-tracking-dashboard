@@ -143,7 +143,12 @@
         }
 
         // --- Realtime Logic ---
-        const socket = io('http://localhost:8080');
+        const socket = io();
+
+        socket.on('connect', function() {
+            document.getElementById('sys-status').innerText = "Live Sync";
+            document.getElementById('sys-status').style.color = "#198754";
+        });
 
         socket.on('aruba-sync', function(data) {
             document.getElementById('sys-status').innerText = "Live Sync";

@@ -1,10 +1,17 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 const fs = require('fs');
+
+const arubaClient = axios.create({
+    httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+    timeout: 15000,
+    headers: { Accept: 'application/json' }
+});
 
 // --- ส่วนจัดการข้อมูล (Database) ---
 const DB_FILE = 'tracker_db.json';
@@ -41,81 +48,178 @@ function addReportLog(sourceType, status, deviceCount = 0, detail = "") {
 // --- เริ่มต้น Server ---
 const app = express();
 app.use(cors());
+app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
+function readDB() {
+    try {
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        if (!raw.trim()) return { devices: [] };
+        const parsed = JSON.parse(raw);
+        if (!parsed.devices) parsed.devices = [];
+        return parsed;
+    } catch (error) {
+        return { devices: [] };
+    }
+}
+
+function writeDB(data) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
 app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
+app.get('/api/devices', (req, res) => {
+    const data = readDB();
+    res.json(data.devices || []);
+});
+
+app.post('/api/devices', (req, res) => {
+    const { type, name, ip } = req.body || {};
+    if (!type || !name) {
+        return res.status(400).json({ error: 'Type and name are required' });
+    }
+
+    const data = readDB();
+    const id = type === 'ap' ? `AP-${Date.now()}` : `BCN-${Date.now()}`;
+    const newDevice = {
+        id,
+        name,
+        type,
+        ip: type === 'ap' ? (ip || 'DHCP') : undefined,
+        status: 'online',
+        lat: 17.4099 + (Math.random() - 0.5) * 0.002,
+        lng: 102.8026 + (Math.random() - 0.5) * 0.002,
+        battery: type === 'beacon' ? 100 : undefined
+    };
+
+    if (type === 'beacon' && !newDevice.battery) newDevice.battery = 100;
+    data.devices.push(newDevice);
+    writeDB(data);
+    io.emit('aruba-sync', { timestamp: new Date(), devices: data.devices });
+    addReportLog('Manual Add', 'Success', data.devices.length, `Added ${name} (${type})`);
+    return res.status(201).json(newDevice);
+});
+
 console.log("Starting Aruba Instant Tracking Server...");
 
 // --- ฟังก์ชันดึงข้อมูลจริงจาก Aruba Virtual Controller ---
+function extractToken(payload) {
+    if (!payload) return null;
+    if (payload.access_token) return payload.access_token;
+    if (payload.token) return payload.token;
+    if (payload.session_token) return payload.session_token;
+    if (payload.data) return extractToken(payload.data);
+    return null;
+}
+
+function normalizeArubaArray(payload, keys) {
+    if (!payload) return [];
+    for (const key of keys) {
+        if (payload[key]) return Array.isArray(payload[key]) ? payload[key] : [payload[key]];
+        if (payload.data && payload.data[key]) return Array.isArray(payload.data[key]) ? payload.data[key] : [payload.data[key]];
+    }
+    return [];
+}
+
 async function syncWithAruba() {
     const baseUrl = process.env.ARUBA_URL;
-    
-    if (!baseUrl) return null; 
+    if (!baseUrl) return null;
 
     try {
         console.log(">>> Syncing with Aruba API...");
-        
-        // 1. Login (Instant OS API v2)
-        const loginRes = await axios.post(`${baseUrl}/api/v2/auth/login`, {
-            username: process.env.ARUBA_USER,
-            password: process.env.ARUBA_PASS
-        });
 
-        const token = loginRes.data.access_token || loginRes.data.token;
+        const loginCandidates = [
+            `${baseUrl}/api/v2/auth/login`,
+            `${baseUrl}/api/v2/login`,
+            `${baseUrl}/api/login`
+        ];
+
+        let token = null;
+        for (const loginUrl of loginCandidates) {
+            try {
+                const loginRes = await arubaClient.post(loginUrl, {
+                    username: process.env.ARUBA_USER,
+                    password: process.env.ARUBA_PASS
+                }, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                token = extractToken(loginRes.data);
+                if (token) {
+                    console.log(`>>> Aruba login success via ${loginUrl}`);
+                    break;
+                }
+            } catch (e) {
+                console.log(`>>> Login attempt failed for ${loginUrl}: ${e.message}`);
+            }
+        }
+
         if (!token) throw new Error("Login failed - No token received");
 
         const headers = { Authorization: `Bearer ${token}` };
-        let deviceCount = 0;
+        const liveDevices = [];
         let foundAPs = 0, foundBeacons = 0;
 
-        // 2. ดึงข้อมูล AP
-        try {
-            const apRes = await axios.get(`${baseUrl}/api/v2/wireless/monitor/access_points`, { headers });
-            const aps = apRes.data.access_points || apRes.data.wireless_aps || [];
-            
-            deviceCount += aps.length;
-            foundAPs = aps.length;
+        const apEndpoints = [
+            `${baseUrl}/api/v2/wireless/monitor/access_points`,
+            `${baseUrl}/api/v1/access_points`,
+            `${baseUrl}/api/v2/access_points`
+        ];
 
-            const currentDB = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-            const dbApsIds = new Set(currentDB.devices.filter(d => d.type === 'ap').map(d => d.id));
-            
-            for (const d of aps) {
-                if (!dbApsIds.has(d.mac_addr || d.mac)) {
-                    currentDB.devices.push({
-                        id: d.mac_addr || d.mac,
-                        name: d.name || d.model,
+        for (const apUrl of apEndpoints) {
+            try {
+                const apRes = await arubaClient.get(apUrl, { headers });
+                const aps = normalizeArubaArray(apRes.data, ['access_points', 'wireless_aps', 'aps']);
+                foundAPs = aps.length;
+
+                aps.forEach(d => {
+                    liveDevices.push({
+                        id: d.mac_addr || d.mac || d.id || `AP-${Date.now()}-${Math.random()}`,
+                        name: d.name || d.model || 'AP-Unknown',
                         type: 'ap',
-                        ip: d.ip_addr || null
+                        ip: d.ip_addr || d.ip || 'DHCP',
+                        status: 'online',
+                        lat: d.lat || 17.4099 + (Math.random() * 0.002),
+                        lng: d.lng || 102.8026 + (Math.random() * 0.002)
                     });
-                }
+                });
+                break;
+            } catch (e) {
+                console.log(`>>> AP endpoint failed for ${apUrl}: ${e.message}`);
             }
-        } catch (e) { console.log(">>> AP Fetch Skipped:", e.message); }
+        }
 
-        // 3. ดึงข้อมูล Beacon
-        try {
-            const beaconRes = await axios.get(`${baseUrl}/api/v2/wireless/monitor/bluetooth_beacons`, { headers });
-            const beacons = beaconRes.data.bluetooth_beacons || [];
-            
-            deviceCount += beacons.length;
-            foundBeacons = beacons.length;
+        const beaconEndpoints = [
+            `${baseUrl}/api/v2/wireless/monitor/bluetooth_beacons`,
+            `${baseUrl}/api/v1/bluetooth_beacons`,
+            `${baseUrl}/api/v2/bluetooth_beacons`
+        ];
 
-            const currentDB = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-            for (const b of beacons) {
-                if (!currentDB.devices.find(dev => dev.id === b.mac_addr)) {
-                    currentDB.devices.push({
-                        id: b.mac_addr,
-                        name: b.name || `BCN-${b.mac_addr.slice(-6)}`,
+        for (const beaconUrl of beaconEndpoints) {
+            try {
+                const beaconRes = await arubaClient.get(beaconUrl, { headers });
+                const beacons = normalizeArubaArray(beaconRes.data, ['bluetooth_beacons', 'beacons', 'clients']);
+                foundBeacons = beacons.length;
+
+                beacons.forEach(b => {
+                    liveDevices.push({
+                        id: b.mac_addr || b.mac || b.id || `BCN-${Date.now()}-${Math.random()}`,
+                        name: b.name || `BCN-${(b.mac_addr || b.mac || 'unknown').slice(-6)}`,
                         type: 'beacon',
-                        battery: b.battery_life
+                        battery: b.battery_life || b.battery || 100,
+                        status: 'online',
+                        lat: b.lat || 17.4099 + (Math.random() * 0.002),
+                        lng: b.lng || 102.8026 + (Math.random() * 0.002)
                     });
-                }
+                });
+                break;
+            } catch (e) {
+                console.log(`>>> Beacon endpoint failed for ${beaconUrl}: ${e.message}`);
             }
-            fs.writeFileSync(DB_FILE, JSON.stringify(currentDB));
-        } catch (e) { console.log(">>> Beacon Fetch Skipped:", e.message); }
+        }
 
-        addReportLog('Aruba API', 'Success', deviceCount, `Found: ${foundAPs} APs, ${foundBeacons} Beacons`);
-        return []; 
+        addReportLog('Aruba API', 'Success', liveDevices.length, `Found: ${foundAPs} APs, ${foundBeacons} Beacons`);
+        return liveDevices;
 
     } catch (error) {
         console.error(">>> Aruba API Failed:", error.response?.data || error.message);
@@ -156,21 +260,20 @@ function runSimulation() {
 // --- Loop ทำงานหลัก (10 วินาที) ---
 setInterval(async () => {
     addReportLog('Polling', 'Pending', 0, "Checking connection..."); 
-    
+
     const realData = await syncWithAruba();
     let finalDevices = [];
 
-    if (realData && realData.length > 0) {
+    if (realData === null) {
+        finalDevices = runSimulation();
+    } else {
         finalDevices = realData.map(d => {
-            // ถ้าไม่ได้ Calibrate AP ไว้ ให้ใช้จุดยืนของโรงพยาบาลชั่วคราว
-            if (d.type === 'ap' && d.lat === 0 && d.lng === 0) {
-                d.lat = 17.4099 + Math.random() * 0.001; 
+            if (d.type === 'ap' && (!d.lat || !d.lng || d.lat === 0 || d.lng === 0)) {
+                d.lat = 17.4099 + Math.random() * 0.001;
                 d.lng = 102.8026 + Math.random() * 0.001;
             }
             return d;
         });
-    } else {
-        finalDevices = runSimulation();
     }
 
     io.emit('aruba-sync', { timestamp: new Date(), devices: finalDevices });
