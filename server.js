@@ -1,11 +1,19 @@
 const express = require('express');
 const http = require('http');
 const https = require('https');
+const path = require('path');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 const fs = require('fs');
+
+const CONFIG = {
+    host: process.env.HOST || '0.0.0.0',
+    port: Number(process.env.PORT || 3000),
+    pollingInterval: Number(process.env.POLL_INTERVAL_MS || 10000),
+    dbFile: path.join(__dirname, process.env.DB_FILE || 'tracker_db.json')
+};
 
 const arubaClient = axios.create({
     httpsAgent: new https.Agent({ rejectUnauthorized: false }),
@@ -14,7 +22,7 @@ const arubaClient = axios.create({
 });
 
 // --- ส่วนจัดการข้อมูล (Database) ---
-const DB_FILE = 'tracker_db.json';
+const DB_FILE = CONFIG.dbFile;
 
 function initData() {
     if (!fs.existsSync(DB_FILE)) {
@@ -329,8 +337,9 @@ setInterval(async () => {
     }
 
     io.emit('aruba-sync', { timestamp: new Date(), devices: finalDevices });
-}, 10000);
+}, CONFIG.pollingInterval);
 
-server.listen(process.env.PORT || 3000, () => {
-    console.log(`Dashboard listening on http://localhost:${process.env.PORT || 3000}`);
+server.listen(CONFIG.port, CONFIG.host, () => {
+    console.log(`Dashboard listening on http://${CONFIG.host}:${CONFIG.port}`);
+    console.log(`Local access: http://localhost:${CONFIG.port}`);
 });
